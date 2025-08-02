@@ -71,7 +71,7 @@ export default function WhatsAppDashboard() {
       } else {
         toast.success("Twilio WhatsApp credentials validated successfully!");
       }
-    } catch (err) {
+    } catch {
       setTwilioValid(false);
       toast.error("Failed to validate Twilio credentials.");
     }
@@ -91,12 +91,13 @@ export default function WhatsAppDashboard() {
         try {
           const numbers: string[] = [];
 
-          results.data.forEach((row: any) => {
+          results.data.forEach((row: unknown) => {
             if (Array.isArray(row)) {
               if (row[0] && typeof row[0] === "string") {
                 numbers.push(row[0].trim());
               }
             } else if (typeof row === "object" && row !== null) {
+              const rowObj = row as Record<string, unknown>;
               const phoneFields = [
                 "phone",
                 "phoneNumber",
@@ -106,15 +107,15 @@ export default function WhatsAppDashboard() {
                 "telephone",
               ];
               for (const field of phoneFields) {
-                if (row[field]) {
-                  numbers.push(row[field].toString().trim());
+                if (rowObj[field]) {
+                  numbers.push(String(rowObj[field]).trim());
                   break;
                 }
               }
-              if (!phoneFields.some((field) => row[field])) {
-                const firstValue = Object.values(row)[0];
+              if (!phoneFields.some((field) => rowObj[field])) {
+                const firstValue = Object.values(rowObj)[0];
                 if (firstValue) {
-                  numbers.push(firstValue.toString().trim());
+                  numbers.push(String(firstValue).trim());
                 }
               }
             }
@@ -127,7 +128,7 @@ export default function WhatsAppDashboard() {
           toast.success(
             `Imported ${uniqueNumbers.length} phone numbers from CSV`
           );
-        } catch (err) {
+        } catch {
           toast.error("Failed to parse CSV file. Please check the format.");
         }
       },

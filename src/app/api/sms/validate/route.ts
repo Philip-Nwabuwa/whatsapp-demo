@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getTwilioService } from '@/lib/twilio';
+import { NextResponse } from "next/server";
+import { getTwilioService } from "@/lib/twilio";
 
 export async function GET() {
   try {
@@ -9,24 +9,25 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       valid: isValid,
-      message: isValid ? 'Twilio credentials are valid' : 'Twilio credentials are invalid'
+      message: isValid
+        ? "Twilio credentials are valid"
+        : "Twilio credentials are invalid",
     });
-
   } catch (error) {
-    console.error('Twilio validation error:', error);
-    
+    console.error("Twilio validation error:", error);
+
     return NextResponse.json({
       success: false,
       valid: false,
-      message: 'Failed to validate Twilio credentials',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: "Failed to validate Twilio credentials",
+      error: error instanceof Error ? error.message : "Unknown error",
     });
   }
 }
 
 export async function POST() {
   return NextResponse.json(
-    { error: 'Method not allowed. Use GET to validate credentials.' },
+    { error: "Method not allowed. Use GET to validate credentials." },
     { status: 405 }
   );
 }

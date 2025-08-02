@@ -129,7 +129,7 @@ class TwilioService {
 
       await this.client.api.accounts(accountSid).fetch();
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
