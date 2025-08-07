@@ -49,13 +49,16 @@ A Next.js application for sending bulk marketing messages via WhatsApp using Twi
    ```
 
 3. **Configure environment variables**:
-   Copy `.env.local.example` to `.env.local` and fill in your Twilio credentials:
+   Copy `.env.example` to `.env.local` and fill in your credentials:
 
    ```env
+   # Database Configuration
+   DATABASE_URL=postgresql://username:password@localhost:5432/whatsapp_dashboard
+
+   # Twilio Configuration
    TWILIO_ACCOUNT_SID=your_account_sid_here
    TWILIO_AUTH_TOKEN=your_auth_token_here
    TWILIO_WHATSAPP_NUMBER=+14155238886  # Your Twilio WhatsApp number
-   TWILIO_PHONE_NUMBER=your_backup_number  # Fallback number
 
    # Optional: Rate limiting
    TWILIO_RATE_LIMIT_PER_SECOND=1
