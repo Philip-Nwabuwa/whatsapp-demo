@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTwilioService } from "@/lib/twilio";
+import { getTwilioService, WhatsAppResult } from "@/lib/twilio";
 import { runMigrations } from "@/lib/migrations";
 import {
   validatePhoneNumbers,
@@ -130,7 +130,14 @@ export async function POST(request: NextRequest) {
     // Initialize Twilio service
     const twilioService = getTwilioService();
 
-    let options: any = {};
+    const options: {
+      template?: {
+        templateName: string;
+        templateLanguage: string;
+        templateVariables?: string[];
+      };
+      message?: string;
+    } = {};
 
     if (template || templateName) {
       // Template message
@@ -176,13 +183,13 @@ export async function POST(request: NextRequest) {
       // Record template sends if this was a template message
       if (templateName) {
         const templateVariablesArray = (templateVariables || []).filter(
-          (v) => v.trim() !== ""
+          (v: string) => v.trim() !== ""
         );
 
         Promise.all(
           result.results
-            .filter((r) => r.success)
-            .map((r) =>
+            .filter((r: WhatsAppResult) => r.success)
+            .map((r: WhatsAppResult) =>
               recordTemplateSend(
                 r.phoneNumber,
                 templateName,

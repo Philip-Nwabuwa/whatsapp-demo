@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertTriangle, Users, UserX } from "lucide-react";
 
 interface DuplicateConfirmationModalProps {
@@ -54,17 +53,17 @@ export default function DuplicateConfirmationModal({
     ? intraInputDuplicates.length
     : duplicateNumbers.length;
 
-  const handleContinueWithDuplicates = async () => {
+  const handleContinueWithDuplicates = () => {
     setIsProcessing(true);
     try {
-      await onContinueWithDuplicates();
+      onContinueWithDuplicates();
     } finally {
       setIsProcessing(false);
       onClose();
     }
   };
 
-  const handleRemoveDuplicates = async () => {
+  const handleRemoveDuplicates = () => {
     // Prevent sending if no new numbers exist
     if (newNumbers === 0) {
       // Show error message and close modal
@@ -75,7 +74,7 @@ export default function DuplicateConfirmationModal({
 
     setIsProcessing(true);
     try {
-      await onRemoveDuplicates();
+      onRemoveDuplicates();
     } finally {
       setIsProcessing(false);
       onClose();

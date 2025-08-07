@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/database";
-import { getNumberStatistics } from "@/lib/numberValidation";
+import { getNumberStatistics, PhoneNumberRecord } from "@/lib/numberValidation";
 import { runMigrations } from "@/lib/migrations";
 
 /**
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     // Build WHERE clause
     let whereClause = "";
-    const queryParams: any[] = [];
+    const queryParams: (string | number)[] = [];
     let paramIndex = 1;
 
     if (status !== "all") {
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
     const validationResult = await validatePhoneNumbers(phoneNumbers);
 
     // Store new numbers
-    let storedNumbers: any[] = [];
+    let storedNumbers: PhoneNumberRecord[] = [];
     if (validationResult.newNumbers.length > 0) {
       storedNumbers = await storePhoneNumbers(validationResult.newNumbers, {
         ...metadata,

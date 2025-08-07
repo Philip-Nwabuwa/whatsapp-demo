@@ -62,7 +62,16 @@ export default function WhatsAppDashboard() {
   const [templateName, setTemplateName] = useState("");
   const [templateLanguage, setTemplateLanguage] = useState("en");
   const [templateVariables, setTemplateVariables] = useState<string[]>([]);
-  const [templates, setTemplates] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<
+    Array<{
+      sid: string;
+      friendlyName: string;
+      language: string;
+      dateCreated: Date;
+      dateUpdated: Date;
+      types: string[];
+    }>
+  >([]);
   const [loadingTemplates, setLoadingTemplates] = useState(false);
 
   // Results state
@@ -72,8 +81,22 @@ export default function WhatsAppDashboard() {
   // Duplicate confirmation modal state
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [duplicateNumbers, setDuplicateNumbers] = useState<string[]>([]);
-  const [pendingSendData, setPendingSendData] = useState<any>(null);
-  const [validationResult, setValidationResult] = useState<any>(null);
+  const [pendingSendData, setPendingSendData] = useState<{
+    phoneNumbers: string[];
+    message?: string;
+    templateName?: string;
+    templateLanguage?: string;
+    templateVariables?: string[];
+  } | null>(null);
+  const [validationResult, setValidationResult] = useState<{
+    totalInputNumbers: number;
+    uniqueInputNumbers: string[];
+    intraInputDuplicates: string[];
+    databaseDuplicates: string[];
+    uniqueNewNumbers: string[];
+    newNumbers: string[];
+    duplicateNumbers: string[];
+  } | null>(null);
 
   // Validate Twilio credentials on mount
   useEffect(() => {
@@ -126,7 +149,7 @@ export default function WhatsAppDashboard() {
       } else {
         toast.error("Failed to fetch templates: " + data.error);
       }
-    } catch (error) {
+    } catch {
       toast.error("Failed to fetch templates");
     } finally {
       setLoadingTemplates(false);
@@ -230,7 +253,13 @@ export default function WhatsAppDashboard() {
       }
 
       // Prepare request body based on message type
-      let requestBody: any = {
+      const requestBody: {
+        phoneNumbers: string[];
+        message?: string;
+        templateName?: string;
+        templateLanguage?: string;
+        templateVariables?: string[];
+      } = {
         phoneNumbers: numbersArray,
       };
 
@@ -290,7 +319,13 @@ export default function WhatsAppDashboard() {
 
   // Function to actually perform the send operation
   const performSend = async (
-    requestBody: any,
+    requestBody: {
+      phoneNumbers: string[];
+      message?: string;
+      templateName?: string;
+      templateLanguage?: string;
+      templateVariables?: string[];
+    },
     removeDuplicates: boolean = false
   ) => {
     try {
@@ -519,7 +554,7 @@ export default function WhatsAppDashboard() {
                           <AlertCircle className="h-3 w-3" />
                           <span>
                             Freeform messages only work within 24 hours of
-                            customer's last message
+                            customer&apos;s last message
                           </span>
                         </div>
                       ) : (

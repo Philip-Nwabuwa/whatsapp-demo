@@ -62,7 +62,13 @@ class TwilioService {
       await twilioPerSecondLimiter.waitForLimit("whatsapp");
       await twilioSMSRateLimiter.waitForLimit("whatsapp");
 
-      let messagePayload: any = {
+      const messagePayload: {
+        from: string;
+        to: string;
+        contentSid?: string;
+        contentVariables?: string;
+        body?: string;
+      } = {
         from: `whatsapp:${this.fromNumber}`,
         to: `whatsapp:${cleanedNumber}`,
       };

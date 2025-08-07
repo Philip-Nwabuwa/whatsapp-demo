@@ -9,7 +9,7 @@ export interface PhoneNumberRecord {
   last_sent_at: Date | null;
   send_count: number;
   status: "active" | "blocked" | "invalid";
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface ValidationResult {
@@ -44,7 +44,7 @@ export interface TemplateSendRecord {
   sent_at: Date;
   message_sid?: string;
   status: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 /**
@@ -226,7 +226,7 @@ export async function validatePhoneNumbers(
  */
 export async function storePhoneNumber(
   phoneNumber: string,
-  metadata: Record<string, any> = {}
+  metadata: Record<string, unknown> = {}
 ): Promise<PhoneNumberRecord> {
   const normalized = normalizePhoneNumber(phoneNumber);
 
@@ -253,7 +253,7 @@ export async function storePhoneNumber(
  */
 export async function storePhoneNumbers(
   phoneNumbers: string[],
-  metadata: Record<string, any> = {}
+  metadata: Record<string, unknown> = {}
 ): Promise<PhoneNumberRecord[]> {
   if (phoneNumbers.length === 0) {
     return [];
@@ -350,7 +350,7 @@ export async function recordTemplateSend(
   templateLanguage: string = "en",
   templateVariables: string[] = [],
   messageSid?: string,
-  metadata: Record<string, any> = {}
+  metadata: Record<string, unknown> = {}
 ): Promise<TemplateSendRecord | null> {
   try {
     // First, get the phone number record

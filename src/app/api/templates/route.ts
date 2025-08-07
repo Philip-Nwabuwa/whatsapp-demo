@@ -19,14 +19,23 @@ export async function GET() {
     const contents = await client.content.v1.contents.list();
 
     // Format the templates for the UI
-    const templates = contents.map((content: any) => ({
-      sid: content.sid,
-      friendlyName: content.friendlyName,
-      language: content.language,
-      dateCreated: content.dateCreated,
-      dateUpdated: content.dateUpdated,
-      types: Object.keys(content.types || {}),
-    }));
+    const templates = contents.map(
+      (content: {
+        sid: string;
+        friendlyName: string;
+        language: string;
+        dateCreated: Date;
+        dateUpdated: Date;
+        types?: Record<string, unknown>;
+      }) => ({
+        sid: content.sid,
+        friendlyName: content.friendlyName,
+        language: content.language,
+        dateCreated: content.dateCreated,
+        dateUpdated: content.dateUpdated,
+        types: Object.keys(content.types || {}),
+      })
+    );
 
     return NextResponse.json({
       success: true,

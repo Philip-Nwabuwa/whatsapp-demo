@@ -195,7 +195,7 @@ export async function checkSchemaVersion(): Promise<{
       latest: SCHEMA_VERSION,
       upToDate: currentVersion >= SCHEMA_VERSION,
     };
-  } catch (error) {
+  } catch {
     // If schema_version table doesn't exist, we're at version 0
     return {
       current: 0,
