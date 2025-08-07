@@ -4,24 +4,46 @@ import { getTwilioService } from "@/lib/twilio";
 export async function GET() {
   try {
     const twilioService = getTwilioService();
+
     const isValid = await twilioService.validateCredentials();
+
+    if (!isValid) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid Twilio credentials or configuration",
+        },
+        { status: 401 }
+      );
+    }
+
+    // Get account info
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const fromNumber =
+      process.env.TWILIO_WHATSAPP_NUMBER || process.env.TWILIO_PHONE_NUMBER;
 
     return NextResponse.json({
       success: true,
-      valid: isValid,
-      message: isValid
-        ? "Twilio credentials are valid"
-        : "Twilio credentials are invalid",
+      message: "Twilio credentials are valid",
+      config: {
+        accountSid: accountSid ? `${accountSid.substring(0, 8)}...` : "Not set",
+        fromNumber: fromNumber || "Not set",
+        environment: accountSid?.startsWith("AC") ? "Live" : "Unknown",
+      },
     });
   } catch (error) {
-    console.error("Twilio validation error:", error);
+    console.error("Credential validation error:", error);
 
-    return NextResponse.json({
-      success: false,
-      valid: false,
-      message: "Failed to validate Twilio credentials",
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to validate credentials",
+      },
+      { status: 500 }
+    );
   }
 }
 

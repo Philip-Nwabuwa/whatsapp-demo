@@ -14,6 +14,17 @@ export interface BulkWhatsAppResult {
   results: WhatsAppResult[];
 }
 
+export interface TemplateMessage {
+  templateName: string;
+  templateLanguage?: string;
+  templateVariables?: string[];
+}
+
+export interface MessageOptions {
+  message?: string;
+  template?: TemplateMessage;
+}
+
 class TwilioService {
   private client: twilio.Twilio;
   private fromNumber: string;
@@ -32,7 +43,10 @@ class TwilioService {
     this.fromNumber = fromNumber;
   }
 
-  async sendWhatsApp(to: string, message: string): Promise<WhatsAppResult> {
+  async sendWhatsApp(
+    to: string,
+    options: MessageOptions
+  ): Promise<WhatsAppResult> {
     try {
       // Clean and validate phone number
       const cleanedNumber = this.cleanPhoneNumber(to);
@@ -48,11 +62,36 @@ class TwilioService {
       await twilioPerSecondLimiter.waitForLimit("whatsapp");
       await twilioSMSRateLimiter.waitForLimit("whatsapp");
 
-      const result = await this.client.messages.create({
-        body: message,
+      let messagePayload: any = {
         from: `whatsapp:${this.fromNumber}`,
         to: `whatsapp:${cleanedNumber}`,
-      });
+      };
+
+      // Check if sending template or freeform message
+      if (options.template) {
+        // Template message (for outside 24-hour window)
+        // For Twilio Content API templates, use contentSid (starts with HX)
+        messagePayload.contentSid = options.template.templateName;
+
+        // For Content API templates, variables are passed differently
+        if (
+          options.template.templateVariables &&
+          options.template.templateVariables.length > 0
+        ) {
+          const variablesObj: { [key: string]: string } = {};
+          options.template.templateVariables.forEach((variable, index) => {
+            variablesObj[(index + 1).toString()] = variable;
+          });
+          messagePayload.contentVariables = JSON.stringify(variablesObj);
+        }
+      } else if (options.message) {
+        // Freeform message (only works inside 24-hour window)
+        messagePayload.body = options.message;
+      } else {
+        throw new Error("Either message or template must be provided");
+      }
+
+      const result = await this.client.messages.create(messagePayload);
 
       return {
         phoneNumber: to,
@@ -60,6 +99,16 @@ class TwilioService {
         messageId: result.sid,
       };
     } catch (error) {
+      // Handle specific WhatsApp window error
+      if (error instanceof Error && error.message.includes("63016")) {
+        return {
+          phoneNumber: to,
+          success: false,
+          error:
+            "Outside 24-hour window. Use a message template instead of freeform message.",
+        };
+      }
+
       return {
         phoneNumber: to,
         success: false,
@@ -69,16 +118,38 @@ class TwilioService {
     }
   }
 
+  async sendFreeformWhatsApp(
+    to: string,
+    message: string
+  ): Promise<WhatsAppResult> {
+    return this.sendWhatsApp(to, { message });
+  }
+
+  async sendTemplateWhatsApp(
+    to: string,
+    templateName: string,
+    templateLanguage: string = "en",
+    templateVariables?: string[]
+  ): Promise<WhatsAppResult> {
+    return this.sendWhatsApp(to, {
+      template: {
+        templateName,
+        templateLanguage,
+        templateVariables,
+      },
+    });
+  }
+
   async sendBulkWhatsApp(
     phoneNumbers: string[],
-    message: string
+    options: MessageOptions
   ): Promise<BulkWhatsAppResult> {
     const results: WhatsAppResult[] = [];
     let totalSent = 0;
     let totalFailed = 0;
 
     for (const phoneNumber of phoneNumbers) {
-      const result = await this.sendWhatsApp(phoneNumber, message);
+      const result = await this.sendWhatsApp(phoneNumber, options);
       results.push(result);
 
       if (result.success) {

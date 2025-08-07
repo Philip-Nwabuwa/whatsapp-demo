@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { BulkWhatsAppResult } from "@/lib/twilio";
 import Papa from "papaparse";
 import { toast } from "sonner";
+import DuplicateConfirmationModal from "./DuplicateConfirmationModal";
 
 // shadcn/ui components
 import { Button } from "@/components/ui/button";
@@ -40,31 +41,52 @@ import {
   XCircle,
   AlertCircle,
   Loader2,
+  Plus,
+  Minus,
+  MessageSquare,
+  File,
 } from "lucide-react";
 
 export default function WhatsAppDashboard() {
   // Form state
   const [message, setMessage] = useState("Hello from WhatsApp!");
-  const [phoneNumbers, setPhoneNumbers] = useState("+2349127894005");
+  const [phoneNumbers, setPhoneNumbers] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [twilioValid, setTwilioValid] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Template state
+  const [messageType, setMessageType] = useState<"freeform" | "template">(
+    "template"
+  );
+  const [templateName, setTemplateName] = useState("");
+  const [templateLanguage, setTemplateLanguage] = useState("en");
+  const [templateVariables, setTemplateVariables] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
 
   // Results state
   const [results, setResults] = useState<BulkWhatsAppResult | null>(null);
   const [activeTab, setActiveTab] = useState("compose");
 
+  // Duplicate confirmation modal state
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [duplicateNumbers, setDuplicateNumbers] = useState<string[]>([]);
+  const [pendingSendData, setPendingSendData] = useState<any>(null);
+  const [validationResult, setValidationResult] = useState<any>(null);
+
   // Validate Twilio credentials on mount
   useEffect(() => {
     validateTwilioCredentials();
+    fetchTemplates();
   }, []);
 
   const validateTwilioCredentials = async () => {
     try {
       const response = await fetch("/api/sms/validate");
       const data = await response.json();
-      setTwilioValid(data.valid);
-      if (!data.valid) {
+      setTwilioValid(data.success);
+      if (!data.success) {
         toast.error(
           "Twilio WhatsApp credentials are invalid. Please check your environment variables."
         );
@@ -74,6 +96,40 @@ export default function WhatsAppDashboard() {
     } catch {
       setTwilioValid(false);
       toast.error("Failed to validate Twilio credentials.");
+    }
+  };
+
+  // Template variable helpers
+  const addTemplateVariable = () => {
+    setTemplateVariables([...templateVariables, ""]);
+  };
+
+  const updateTemplateVariable = (index: number, value: string) => {
+    const updated = [...templateVariables];
+    updated[index] = value;
+    setTemplateVariables(updated);
+  };
+
+  const removeTemplateVariable = (index: number) => {
+    const updated = templateVariables.filter((_, i) => i !== index);
+    setTemplateVariables(updated);
+  };
+
+  // Fetch available templates
+  const fetchTemplates = async () => {
+    setLoadingTemplates(true);
+    try {
+      const response = await fetch("/api/templates");
+      const data = await response.json();
+      if (data.success) {
+        setTemplates(data.templates);
+      } else {
+        toast.error("Failed to fetch templates: " + data.error);
+      }
+    } catch (error) {
+      toast.error("Failed to fetch templates");
+    } finally {
+      setLoadingTemplates(false);
     }
   };
 
@@ -145,8 +201,15 @@ export default function WhatsAppDashboard() {
     setIsLoading(true);
 
     try {
-      if (!message.trim()) {
-        throw new Error("Message is required");
+      // Validate based on message type
+      if (messageType === "freeform") {
+        if (!message.trim()) {
+          throw new Error("Message is required");
+        }
+      } else {
+        if (!templateName.trim()) {
+          throw new Error("Template name is required");
+        }
       }
 
       if (!phoneNumbers.trim()) {
@@ -166,15 +229,102 @@ export default function WhatsAppDashboard() {
         throw new Error("Maximum 100 phone numbers allowed per request");
       }
 
+      // Prepare request body based on message type
+      let requestBody: any = {
+        phoneNumbers: numbersArray,
+      };
+
+      if (messageType === "freeform") {
+        requestBody.message = message.trim();
+      } else {
+        requestBody.templateName = templateName.trim();
+        requestBody.templateLanguage = templateLanguage;
+        if (templateVariables.length > 0) {
+          requestBody.templateVariables = templateVariables.filter(
+            (v) => v.trim() !== ""
+          );
+        }
+      }
+
+      // First, validate numbers and check for duplicates
+      const validationResponse = await fetch("/api/sms/validate-numbers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ phoneNumbers: numbersArray }),
+      });
+
+      const validationData = await validationResponse.json();
+
+      if (!validationResponse.ok) {
+        throw new Error(
+          validationData.error || "Failed to validate phone numbers"
+        );
+      }
+
+      // If duplicates are found (database duplicates OR intra-input duplicates), show confirmation modal
+      const hasDatabaseDuplicates =
+        validationData.duplicateNumbers &&
+        validationData.duplicateNumbers.length > 0;
+      const hasIntraInputDuplicates =
+        validationData.intraInputDuplicates &&
+        validationData.intraInputDuplicates.length > 0;
+
+      if (hasDatabaseDuplicates || hasIntraInputDuplicates) {
+        setDuplicateNumbers(validationData.duplicateNumbers || []);
+        setValidationResult(validationData);
+        setPendingSendData(requestBody);
+        setShowDuplicateModal(true);
+        setIsLoading(false);
+        return; // Exit here, modal will handle the actual sending
+      }
+
+      // No duplicates, proceed with sending
+      await performSend(requestBody);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "An error occurred");
+      setIsLoading(false);
+    }
+  };
+
+  // Function to actually perform the send operation
+  const performSend = async (
+    requestBody: any,
+    removeDuplicates: boolean = false
+  ) => {
+    try {
+      // If removing duplicates, validate again and use only new numbers
+      if (removeDuplicates) {
+        const validationResponse = await fetch("/api/sms/validate-numbers", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ phoneNumbers: requestBody.phoneNumbers }),
+        });
+
+        const validationData = await validationResponse.json();
+        if (validationResponse.ok && validationData.newNumbers) {
+          requestBody.phoneNumbers = validationData.newNumbers;
+        }
+
+        // Check if there are any numbers left to send after removing duplicates
+        if (
+          !requestBody.phoneNumbers ||
+          requestBody.phoneNumbers.length === 0
+        ) {
+          toast.error("No new numbers to send to. All numbers are duplicates.");
+          return;
+        }
+      }
+
       const response = await fetch("/api/sms/send", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          phoneNumbers: numbersArray,
-          message: message.trim(),
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -185,13 +335,38 @@ export default function WhatsAppDashboard() {
 
       setResults(data.data);
       setActiveTab("results");
-      toast.success(
-        `Messages sent! ${data.data.totalSent} successful, ${data.data.totalFailed} failed`
-      );
+
+      // Enhanced success message with duplicate info
+      let successMessage = `Messages sent! ${data.data.totalSent} successful, ${data.data.totalFailed} failed`;
+      if (data.data.validation) {
+        const { duplicates, new: newCount } = data.data.validation;
+        if (duplicates > 0) {
+          successMessage += ` (${duplicates} duplicates, ${newCount} new)`;
+        }
+      }
+
+      toast.success(successMessage);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Modal handlers
+  const handleContinueWithDuplicates = async () => {
+    if (pendingSendData) {
+      setIsLoading(true);
+      await performSend(pendingSendData, false);
+      setPendingSendData(null);
+    }
+  };
+
+  const handleRemoveDuplicates = async () => {
+    if (pendingSendData) {
+      setIsLoading(true);
+      await performSend(pendingSendData, true);
+      setPendingSendData(null);
     }
   };
 
@@ -304,28 +479,226 @@ export default function WhatsAppDashboard() {
                 <CardHeader>
                   <CardTitle>Compose Message</CardTitle>
                   <CardDescription>
-                    Enter your marketing message for WhatsApp delivery
+                    Send either a freeform message (inside 24-hour window) or a
+                    message template (outside window)
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="message">Marketing Message</Label>
-                    <Textarea
-                      id="message"
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Enter your marketing message here..."
-                      className="min-h-[120px]"
-                      maxLength={1600}
-                      required
-                    />
-                    <div className="flex justify-between text-sm text-muted-foreground">
-                      <span>{characterCount}/1600 characters</span>
-                      <span>
-                        {smsCount} message{smsCount !== 1 ? "s" : ""}
-                      </span>
+                  {/* Message Type Selection */}
+                  <div className="space-y-3">
+                    <Label>Message Type</Label>
+                    <div className="flex space-x-2">
+                      <Button
+                        type="button"
+                        variant={
+                          messageType === "template" ? "default" : "outline"
+                        }
+                        size="sm"
+                        onClick={() => setMessageType("template")}
+                        className="flex items-center space-x-2"
+                      >
+                        <File className="h-4 w-4" />
+                        <span>Message Template</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={
+                          messageType === "freeform" ? "default" : "outline"
+                        }
+                        size="sm"
+                        onClick={() => setMessageType("freeform")}
+                        className="flex items-center space-x-2"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        <span>Freeform Message</span>
+                      </Button>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {messageType === "freeform" ? (
+                        <div className="flex items-center space-x-1">
+                          <AlertCircle className="h-3 w-3" />
+                          <span>
+                            Freeform messages only work within 24 hours of
+                            customer's last message
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-1">
+                          <CheckCircle className="h-3 w-3" />
+                          <span>
+                            Templates work anytime but must be pre-approved by
+                            WhatsApp
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  <Separator />
+
+                  {messageType === "freeform" ? (
+                    // Freeform Message
+                    <div className="space-y-2">
+                      <Label htmlFor="message">Marketing Message</Label>
+                      <Textarea
+                        id="message"
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        placeholder="Enter your marketing message here..."
+                        className="min-h-[120px]"
+                        maxLength={1600}
+                        required
+                      />
+                      <div className="flex justify-between text-sm text-muted-foreground">
+                        <span>{characterCount}/1600 characters</span>
+                        <span>
+                          {smsCount} message{smsCount !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    // Template Message
+                    <div className="space-y-4">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="templateSelect">
+                            Select Template
+                          </Label>
+                          {loadingTemplates ? (
+                            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>Loading templates...</span>
+                            </div>
+                          ) : (
+                            <select
+                              id="templateSelect"
+                              value={templateName}
+                              onChange={(e) => setTemplateName(e.target.value)}
+                              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                              required
+                            >
+                              <option value="">Select a template...</option>
+                              {templates.map((template) => (
+                                <option key={template.sid} value={template.sid}>
+                                  {template.friendlyName} ({template.language})
+                                  - {template.types.join(", ")}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground">
+                              Choose from your existing Twilio Content templates
+                            </p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={fetchTemplates}
+                              disabled={loadingTemplates}
+                              className="text-xs"
+                            >
+                              {loadingTemplates ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                "Refresh"
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Manual Content SID Input (fallback) */}
+                        <div className="space-y-2">
+                          <Label htmlFor="manualContentSid">
+                            Or Enter Content SID Manually
+                          </Label>
+                          <Input
+                            id="manualContentSid"
+                            value={templateName}
+                            onChange={(e) => setTemplateName(e.target.value)}
+                            placeholder="e.g., HX1234567890abcdef1234567890abcdef"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            You can also paste the Content SID directly
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="templateLanguage">Language</Label>
+                          <select
+                            id="templateLanguage"
+                            value={templateLanguage}
+                            onChange={(e) =>
+                              setTemplateLanguage(e.target.value)
+                            }
+                            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <option value="en">English</option>
+                            <option value="es">Spanish</option>
+                            <option value="fr">French</option>
+                            <option value="de">German</option>
+                            <option value="pt">Portuguese</option>
+                            <option value="ar">Arabic</option>
+                            <option value="hi">Hindi</option>
+                            <option value="zh">Chinese</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Template Variables */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Template Variables (Optional)</Label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={addTemplateVariable}
+                            className="flex items-center space-x-1"
+                          >
+                            <Plus className="h-3 w-3" />
+                            <span>Add Variable</span>
+                          </Button>
+                        </div>
+                        {templateVariables.length > 0 && (
+                          <div className="space-y-2">
+                            {templateVariables.map((variable, index) => (
+                              <div
+                                key={index}
+                                className="flex items-center space-x-2"
+                              >
+                                <Input
+                                  value={variable}
+                                  onChange={(e) =>
+                                    updateTemplateVariable(
+                                      index,
+                                      e.target.value
+                                    )
+                                  }
+                                  placeholder={`Variable ${index + 1}`}
+                                  className="flex-1"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="icon"
+                                  onClick={() => removeTemplateVariable(index)}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Variables will replace {`{{1}}`}, {`{{2}}`}, etc. in
+                          your template
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -572,6 +945,25 @@ export default function WhatsAppDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Duplicate Confirmation Modal */}
+      <DuplicateConfirmationModal
+        isOpen={showDuplicateModal}
+        onClose={() => {
+          setShowDuplicateModal(false);
+          setPendingSendData(null);
+          setValidationResult(null);
+          setIsLoading(false);
+        }}
+        duplicateNumbers={duplicateNumbers}
+        totalNumbers={pendingSendData?.phoneNumbers?.length || 0}
+        newNumbers={validationResult?.uniqueNewNumbers?.length || 0}
+        uniqueInputNumbers={validationResult?.uniqueInputNumbers || []}
+        intraInputDuplicates={validationResult?.intraInputDuplicates || []}
+        databaseDuplicates={validationResult?.databaseDuplicates || []}
+        onContinueWithDuplicates={handleContinueWithDuplicates}
+        onRemoveDuplicates={handleRemoveDuplicates}
+      />
     </div>
   );
 }
